@@ -4,3 +4,7 @@ compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2024-07-01"
 pages_build_output_dir = "./build/client"
 send_metrics = false
+
+[vars]
+SUPABASE_CLIENT_ID = "d29fb7b4-e85b-4fb7-978e-fa8b055a99bc"
+SUPABASE_CLIENT_SECRET = "sba_e5ffe12d3230bfc8351ce21697845b7c40a41f23"
