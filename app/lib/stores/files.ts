@@ -43,6 +43,11 @@ export class FilesStore {
   #modifiedFiles: Map<string, string> = import.meta.hot?.data.modifiedFiles ?? new Map();
 
   /**
+   * Tracks files that are currently being written to prevent concurrent writes.
+   */
+  #fileLocks: Set<string> = new Set();
+
+  /**
    * Map of files that matches the state of WebContainer.
    */
   files: MapStore<FileMap> = import.meta.hot?.data.files ?? map({});
@@ -119,19 +124,40 @@ export class FilesStore {
         unreachable('Expected content to be defined');
       }
 
-      await webcontainer.fs.writeFile(relativePath, content);
-
-      if (!this.#modifiedFiles.has(filePath)) {
-        this.#modifiedFiles.set(filePath, oldContent);
+      // Check if content has actually changed to avoid unnecessary writes
+      if (oldContent === content) {
+        logger.info('File content unchanged, skipping write');
+        return;
       }
 
-      // we immediately update the file and don't rely on the `change` event coming from the watcher
-      this.files.setKey(filePath, { type: 'file', content, isBinary: false });
+      // Check if file is currently being written to
+      if (this.#fileLocks.has(filePath)) {
+        logger.info('File is locked, waiting for previous write to complete');
+        // Wait for a short time and try again
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return this.saveFile(filePath, content);
+      }
 
-      logger.info('File updated');
+      // Lock the file
+      this.#fileLocks.add(filePath);
+
+      try {
+        await webcontainer.fs.writeFile(relativePath, content);
+
+        if (!this.#modifiedFiles.has(filePath)) {
+          this.#modifiedFiles.set(filePath, oldContent);
+        }
+
+        // we immediately update the file and don't rely on the `change` event coming from the watcher
+        this.files.setKey(filePath, { type: 'file', content, isBinary: false });
+
+        logger.info('File updated');
+      } finally {
+        // Always unlock the file, even if there was an error
+        this.#fileLocks.delete(filePath);
+      }
     } catch (error) {
       logger.error('Failed to update file content\n\n', error);
-
       throw error;
     }
   }
